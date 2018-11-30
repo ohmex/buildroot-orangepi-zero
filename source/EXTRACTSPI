@@ -1,0 +1,28 @@
+spiread.hd ${scriptaddr} ${spi_scr_offset} ${spi_scr_size}; source ${scriptaddr};
+
+FEX => script.bin
+usb start
+usb dev 0
+spiread.xd 0x43000000 90000 65536
+fatwrite usb 0 0x43000000 file.bin 65536
+bin2fex file.bin >> file.fex
+
+
+SAVE => uInitrd.sfs
+usb start
+usb dev 0
+spiread.xd 0x43300000 440000 8167488
+fatwrite usb 0 0x43300000 uInitrd.sfs 7CA040
+
+
+MMC SAVE => uInitrd.sfs
+spiread.xd 0x43300000 440000 8167488
+fatwrite mmc 0 0x43300000 uInitrd.sfs 7CA040
+
+
+Extract uInitrd
+file uInitrd.sfs
+dd if=uInitrd.sfs of=Initrd skip=64 bs=1
+file Initrd
+sudo mount -t squashfs Initrd mount/
+

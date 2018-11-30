@@ -1,0 +1,136 @@
+#!/bin/sh
+## hyphop ##
+
+NAME=`basename $0`
+
+about() { echo "\
+$NAME - copy hybrid mmc/spi from mmc to spi-flash
+
+USAGE:
+    $NAME yes
+
+ABOUT:
+    hybrid mmc/spi image can generate by [miZy_spi_image_builder].
+    easy write image to mmc, and boot from mmc, after this u can run this script
+    for copy system to spi-flash, for next work from spi without sd/mmc card
+
+LINKS:
+    [miZy_spi_image_builder](https://github.com/hyphop/miZy_spi_image_builder)
+
+EXAMPLE:
+
+    mmc_copy_to_spi yes
+
+    ## FOUND mizy hybrid image info:
+    8388608                                                        
+    mizy_mmc_image.bin                                             
+    miZy_spi_image_builder Thu Apr  6 16:17:17 2017 ## hyphop ##   
+
+    ## WRITE IMAGE CMD:
+    > dd if=/dev/mmcblk0 skip=1 bs=8192 count=1024 of=/dev/mtdblock5
+    1024+0 records in
+    1024+0 records out
+    8388608 bytes (8.0MB) copied, 45.987770 seconds, 178.1KB/s
+
+"; }
+
+. /opt/help_inc 
+
+# 8388608 / 512 = 16384
+
+#dev=/dev/mmcblk1 image_write_sd
+
+sd=
+mmc=
+
+for i in 0 1 ; do
+    type=`cat /sys/block/mmcblk$i/device/type`
+    case $type in
+	SD)
+	sd=/dev/mmcblk$i
+	;;
+	MMC)
+	mmc=/dev/mmcblk$i
+	;;
+    esac
+done
+
+echo "[i] sd $sd mmc $mmc"
+
+case $NAME in
+
+    *_spi)
+    
+    mtd_part=`grep full /proc/mtd 2>/dev/null`
+
+    for s in $mtd_part; do
+        part_num=${s:3:1} # ok only one char 
+        break
+    done
+
+    dst=/dev/mtdblock$part_num
+    [ -e $dst ] || { echo "[e] not found block dev $dst" 1>&2; exit 0; }
+
+    skip=1
+    bs=8192
+
+    [ "$src" = "" ] && src=$sd
+
+    ;;
+
+    *_mmc)
+    [ "$src" = "" ] && src=$sd
+    [ "$dst" = "" ] && dst=$mmc
+    skip=0
+    bs=524288
+    ;;
+
+    *_sd)
+    [ "$src" = "" ] && src=$mmc
+    [ "$dst" = "" ] && dst=$sd
+    skip=0
+    bs=524288
+    ;;
+
+
+esac
+
+
+[ "$size" = "8M" ] && size=8388608
+[ "$size" = "16M" ] && size=16777216
+
+[ -b $src ] || { about; echo "[e] not found block dev $src" 1>&2; exit 0; }
+
+echo "[i] copy from $src to $dst"
+
+read_label="dd if=$src count=1 skip=1"
+echo $read_label
+
+mizy_info=`$read_label 2>/dev/null | head -n 3`
+
+echo "$mizy_info" | grep -q 'miZy_spi_image_builder' || {
+    echo "[i] undef image" 1>&2
+    exit 0
+}
+
+size=`$read_label 2>/dev/null | head -n 1 | grep -o -E '[0-9]+'`
+
+echo "## FOUND mizy hybrid image info:
+$mizy_info"
+
+echo "size: ($size)"
+
+count=$((size/bs))
+cmd="dd if=$src skip=$skip bs=$bs count=$count of=$dst"
+
+echo ""
+echo "## WRITE IMAGE CMD:"
+echo "> $cmd"
+
+[ "$size" = "" ] && { echo "[e] wrong size"; exit 0; }
+[ "$1" = "yes" ] || { about; exit 0; }
+[ -b $dst ] || { about; echo "[e] not found dest block dev $dst" 1>&2; exit 0; }
+
+$cmd
+
+sync

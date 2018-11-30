@@ -1,0 +1,11 @@
+echo "Building image"
+sudo img_size=16M MMC=1 ./builder sachin.conf.fast
+sudo img_size=16M ./builder sachin.conf.fast
+echo "To check MMC image use below"
+echo "sudo dd count=1 skip=1 < firmwares/zeropi-16M.8192-mmc.bin 2>/dev/null | head -n 3"
+echo "To check image hybrid image use below"
+echo "sudo dd count=1 < firmwares/zeropi-16M.bin 2>/dev/null | grep -q -o eGON.BT0 && echo \"OK its hybryd image\""
+echo "To burn MMC image use below"
+echo "sudo dd of=/dev/sde < firmwares/zeropi-16M.8192-mmc.bin"
+echo "To burn hybrid image to SDCARD"
+echo "sudo dd seek=16 bs=512 of=/dev/sde < firmwares/zeropi-16M.bin"

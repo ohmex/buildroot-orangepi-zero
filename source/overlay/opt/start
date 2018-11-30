@@ -1,0 +1,33 @@
+#!/bin/bash
+
+OUTPUT="$(cat /proc/cmdline)"
+
+for i in $OUTPUT
+do
+case $i in
+    root=*)
+    ROOT="${i#*=}"
+    shift
+    ;;
+    loadfrom=*)
+    LOADFROM="${i#*=}"
+    shift
+    ;;
+    bootfrom=*)
+    BOOTFROM="${i#*=}"
+    shift
+    ;;
+    --default)
+    DEFAULT=YES
+    shift
+    ;;
+    *)
+    ;;
+esac
+done
+
+echo "LOADFROM=${LOADFROM} BOOTFROM=${BOOTFROM}"
+
+export loadfrom=${LOADFROM}
+export bootfrom=${BOOTFROM}
+/opt/preinit

@@ -1,0 +1,25 @@
+--- a/arch/arm/boot/dts/sun8i-h2-plus-orangepi-zero.dts	2018-10-27 23:12:17.503394000 +0530
++++ b/arch/arm/boot/dts/sun8i-h2-plus-orangepi-zero.dts	2018-10-27 23:23:50.115393719 +0530
+@@ -168,13 +168,19 @@
+ &uart1 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart1_pins>;
+-	status = "disabled";
++	status = "okay";
+ };
+ 
+ &uart2 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart2_pins>;
+-	status = "disabled";
++	status = "okay";
++};
++
++&uart3 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&uart3_pins>;
++	status = "okay";
+ };
+ 
+ &usb_otg {
+

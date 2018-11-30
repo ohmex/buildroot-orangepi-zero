@@ -1,0 +1,601 @@
+#!/usr/bin/perl
+
+## hyphop ##
+
+=head1 ABOUT miZy_spi_image_builder
+
+SPI-flash miZy firmware image builder (for sunxi Orange Pi Zero, another sunxi boards maybe work too )
+also Hybrid-image generate for SD card (spi emulate on sd card)
+
+Its just a part or miZy project, and same as other our parts can standalone used
+
+This perl script no need any libs or another deps
+
+=head1 Get Source
+
+    mkdir /tmp/zero_builder
+    cd /tmp/zero_builder
+    git clone https://github.com/hyphop/miZy-spi-image-builder.git
+    cd miZy-spi-image-builder
+
+=head1 USAGE
+
+help
+
+    ./miZy_spi_image_builder --help
+
+
+common usage for 8M image, output to firmwares/orange_pi_zero_hyphop_mizy_spi_flash_demo-8M.bin
+
+    ./miZy_spi_image_builder
+
+custom config
+
+    ./miZy_spi_image_builder miZy-spi_image_builder_custom.conf
+
+set 16M image size
+
+    img_size=16M ./miZy_spi_image_builder
+
+not padded by flash size, save only used space
+
+    img_size=0 ./miZy_spi_image_builder
+
+override image out name
+
+    img_name=out/my_image_name%s.bin ./miZy_spi_image_builder
+
+check build status in shell 
+
+    ./miZy_spi_image_builder && echo "build ok"
+    ./miZy_spi_image_builder || echo "build fail"
+
+=head1 BUILD EXAMPLES
+
+https://github.com/hyphop/miZy-spi-image-builder/tree/master/examples
+
+=head1 write image to SPI from host to working device
+
+easy way for upgrade / rewrite system
+
+    scp firmwares/*.bin root@zeru:/tmp
+    dd bs=65536 of=/dev/mtdblock5 < /tmp/*.bin
+
+    163+1 records in
+    163+1 records out
+    10743872 bytes (10.2MB) copied, 61.941887 seconds, 169.4KB/s
+
+=head1 Hybrid image 
+
+by default miZy_spi_image_builder generate hybrid image its simple raw image,
+which can used for SPI and same for SD/MMC. this image equal spi-flash rom and
+ready for direct write to SPI flash, but we can write this image to SD/MMC
+for test work on device, and next copy this image to SPI from booted SD/MMC, 
+
+write hybrid image to SD/MMC
+
+    dd seek=16 bs=512 of=/dev/mmcblk0 < firmwares/mizy_spi_flash_demo-8M.bin
+
+write hybrid image direct to SPI ( /dev/mtdblock5 - full size spi-flash mtd block dev)
+
+    dd bs=65536 of=/dev/mtdblock5 < /tmp/mizy_spi_flash_demo-8M.bin
+
+write hybrid image direct to SPI via mtd
+
+    mtd write /tmp/mizy_spi_flash_demo-8M.bin full
+
+write hybrid image to SPI via sunxi-tooll FEL mode from host machine
+
+    sunxi-fel -p spiflash-write 0 firmwares/mizy_spi_flash_demo-8M.bin
+
+=head1 generate MMC image 
+
+output raw mmc image (this image usable for mmc, not for SPI )
+
+    MMC=1 img_name=firmwares/mizy_mmc_image.bin ./miZy_spi_image_builder 
+
+add one partiotion and write some readme info there
+
+    ./miZy_mmc_add_partitions firmwares/mizy_mmc_image.bin 8x8
+
+=head2 write mmc image to SD/MMC
+
+    dd of=/dev/mmcblk0 < firmwares/mizy_mmc_image.bin
+
+=head1 copy from booted MMC image to SPI, directly from working device 
+
+    mmc_copy_to_spi
+    mmc_copy_to_spi yes
+
+    ## FOUND mizy hybrid image info:
+    8388608                                                        
+    mizy_mmc_image.bin                                             
+    miZy_spi_image_builder Thu Apr  6 16:17:17 2017 ## hyphop ##   
+
+    ## WRITE IMAGE CMD:
+    > dd if=/dev/mmcblk0 skip=1 bs=8192 count=1024 of=/dev/mtdblock5
+    1024+0 records in
+    1024+0 records out
+    8388608 bytes (8.0MB) copied, 45.987770 seconds, 178.1KB/s
+
+ok system is ready for full loading from spi
+now u can remove sd card, and reboot system from spi already!
+
+=head1 CONFIG FILE
+
+default config
+
+    miZy-spi_image_builder.conf
+
+config file its a same pure perl code!
+
+=head1 PATHS
+    
+put your files (uboot scripts env fex/dtc kernel squashfs initramfs userdata) in @SCAN_PATH dirs
+by default are
+
+    .
+    ./bin
+    ./bin.local
+
+=head1 miZy
+
+tiny fast embedded linux, for sunxi Orange Pi Zero (and maybe other boards) and mods.
+Now under active development, but is usable already )
+
+=head1 write image to device in FEL mode
+
+in FEL mode via sunxi-fel tools
+
+check spi flash size
+
+    ./tools/fel_spi_info
+    Manufacturer: Winbond (EFh), model: 40h, size: 16777216 bytes.
+
+ok! write image - u can write any image size <= flash size
+
+    ./tools/fel_spi_write firmwares/orange_pi_zero_hyphop_mizy_spi_flash_demo-8M.bin
+
+=head1 LINKS
+
+=over
+
+=item *
+L<https://github.com/hyphop/miZy-spi-image-builder>
+
+=item *
+L<https://hyphop.github.io/mizy/>
+
+=item *
+L<https://github.com/hyphop/miZy-uboot>
+
+=item *
+L<https://github.com/hyphop/miZy-linux-kernel>
+
+=back
+
+=cut
+
+our (
+    @SCAN_PATH,                  @IMG,
+    $block_size,                 $img_size,
+    $img_name,                   $script_padded_size,
+    $NOW,                        $env_spi_generate,
+    %mtd_name_uboot_read_size,   @env_spi_mtd_parts,
+    %mtd_name_uboot_read_offset, $env_spi_mtd_parts,
+    $MMC_BS,                     $MMC_OFFSET,
+    %mmc_name_uboot_read_size,   %mmc_name_uboot_read_offset,
+    $spi_image,                  $mmc_image
+);
+
+BEGIN {
+
+    select STDERR;
+    $| = 1;
+    select STDOUT;
+    $| = 1;
+
+    ## developer part code
+    our $NOW = localtime();
+    if ( ( join "" => @ARGV ) =~ /--md/ ) {
+        `perldoc -o Markdown "$0" > "$0.md"`;
+        `perldoc -o text "$0" > "$0.txt"`;
+        exit 0;
+    }
+    if ( ( join " " => @ARGV ) =~ /(--push\s*)/ ) {
+        my $msg = $';
+        $msg ||= $NOW;
+        `$0 --md; git add -A && git commit -m "$msg" && git push`;
+        exit 0;
+    }
+
+    ## real code start there
+    exec perldoc => $0 if ( join "" => @ARGV ) =~ /-{1,2}h(elp)?/;
+
+    our $CONF      = shift;
+    our $PROG      = $0;
+    our $PROG_NAME = $0;
+    $PROG_NAME =~ s{(.+/)}{}sg;
+    our $PROG_DIR = $1;
+    $CONF ||= "$PROG.conf";
+    warn "[i] $PROG_DIR $PROG_NAME => CONF: $CONF\n";
+
+# HEHHEHE )))) perl surprize me
+#
+# do "miZy_spi_image_builder.conf.fast" failed, '.'
+# is no longer in @INC; did you mean do
+# "./miZy_spi_image_builder.conf.fast"? at ./miZy_spi_image_builder line 213.
+#
+# perl -v
+# This is perl 5, version 26, subversion 0 (v5.26.0) built for x86_64-linux-gnu-thread-multi
+#
+
+    #warn "INC: " . join ", " => @INC;
+    unshift @INC, '.';
+
+    #    my $CONF_OK = eval { require $CONF };
+    do $CONF;
+    $CONF_OK = 1;
+
+    unless ($CONF_OK) {
+        warn "[e] bad config $CONF\n";
+        exit 1;
+    }
+
+}
+
+# use only for check
+# use common::sense;
+
+our $WARN = "";
+our $ERR  = 0;
+
+sub WARN {
+
+    #syswrite STDERR, join "" => @_;
+    $WARN .= join "" => @_;
+}
+
+sub DIE {
+    $ERR = shift;
+    warn @_;
+    die;
+}
+
+END {
+    syswrite STDERR, $WARN;
+    syswrite STDERR, "ERR: $ERR\n" if $ERR;
+    exit $ERR;
+}
+
+$SIG{'__WARN__'} = \&WARN;
+
+sub getfile {
+    my $f;
+    my $r;
+    my $data;
+    $r = open $f, $_[0];
+    return undef unless $r;
+    my $l = -s $_[0];
+    $r = sysread $f, $data, $l;
+    warn "[i] readed $r($l) bytes from $_[0]\n";
+    return $data;
+}
+
+sub savefile {
+    my $f;
+    my $r = open $f, ">$_[1]";
+    return undef unless $r;
+    my $l = length $_[0];
+    $r = syswrite $f, $_[0], $l;
+    warn "[i] save $_[1] $l bytes\n";
+    return $r;
+}
+
+sub pad {
+
+    #$_[0], $_[1], $_[2];
+    my $l = length $_[0];
+    my $s = $_[1];
+    my $c = $_[2];
+    $c ||= "\x00";
+    my $p = $s - $l;
+
+    #       $p =~ s/^-//;
+    warn "[i] pad $l + $p => $s\n";
+    $_[0] . ${c} x $p
+
+}
+
+our %FILES = ();
+
+sub scan_file {
+    return $FILES{ $_[0] } if defined $FILES{ $_[0] };
+    local $_;
+    for (@SCAN_PATH) {
+        my $e = -f "$_/$_[0]";
+        if ($e) {
+            return $FILES{ $_[0] } = "$_/$_[0]";
+            break;
+        }
+    }
+    return undef;
+}
+
+sub cat {
+    my $s = "";
+    $s .= getfile( scan_file $_ ) for @_;
+
+    #    $s .= getfile($_) for @_;
+    return $s;
+}
+
+$block_size //= 65536;
+
+our $out;
+our $env_spi_mmc_parts = "mmcparts=";
+
+printf STDERR "[i] %s bytes => %s\n" => $img_size => $img_name;
+printf STDERR "[i] %12s 0x%08s(%9s){%8s} %s\n" =>
+  qw/MTD_PART HEX_SIZE DEC_SIZE USED_SZ FILES/;
+
+our $img_size_bytes  = tobytes($img_size);
+our $img_used_size   = 0;
+our $env_spi_content = "# auto generated by $0 - $NOW\n";
+our $env_files;
+our $out_env_start;
+our $out_env_end;
+
+DIE 1 => "[e] image size $img_size_bytes not div by $block_size block size\n"
+  if $img_size_bytes % $block_size;
+
+our $mmc = $MMC_OFFSET;
+our $spi = 0;
+
+## mmc
+##
+##
+for my $part (@IMG) {
+
+    my $part_name = shift @$part;
+    my $part_size = shift @$part;
+
+    #$part
+
+    my $t;
+    if ( $t = $ENV{"IMG_$part_name"} ) {
+
+        #warn "[i] SACHIN add $t => $part_name";
+        push @$part, $t;
+    }
+
+    warn "[i] SACHIN FILES @$part";
+    my $files = join " " => @$part;
+    my $used_size = 0;
+
+    for my $file (@$part) {
+
+        my $filepath = scan_file($file);
+        warn "[i] SACHIN filepath @$filepath";
+        unless ( -f $filepath ) {
+            DIE 2 => "[e] file \"$file\" not found\n";
+        }
+
+        $used_size += -s $filepath;
+
+    }
+
+    if ($part_size) {
+
+        if ( $part_size == 0xFFFFFFF ) {
+            my $free_size = $img_size_bytes - $img_used_size;
+            warn "[i] free_size $free_size bytes!\n";
+            $part_size = $free_size;
+        }
+
+        DIE 3 => "[e] part $part_size size not div by $block_size block size\n"
+          if $part_size % $block_size;
+
+        DIE 4 => "[e] part $part_name $part_size < $used_size"
+          . " needed for $files, try fix config\n"
+          if $used_size > $part_size;
+
+    }
+    else {
+        $part_size = int( $used_size / $block_size ) * $block_size;
+        $part_size += $block_size if $part_size < $used_size;
+
+        warn "[i] $part_size = int( $used_size / $block_size ) * $block_size;";
+    }
+
+    $part_size ||= $block_size;
+
+    # 524288 + 8192 = 532480 / 512 = 1040
+
+    if ( $part_name eq "uboot" ) {
+        $env_spi_content .= sprintf "%s=%x\n",
+          script_ob => ( $MMC_OFFSET + $part_size ) / $MMC_BS;
+        $env_spi_content .= sprintf "%s=%x\n", script_sb => 8192 / $MMC_BS;
+        $env_spi_content .= sprintf "%s=%x\n",
+          env_ob => ( $MMC_OFFSET + $part_size + 4096 ) / $MMC_BS;
+        $env_spi_content .= sprintf "%s=%x\n", env_sb => 4096 / $MMC_BS;
+    }
+
+    if ( $part_name eq "script" ) {
+        $out .= pad( mkimage_header()
+              . cat( shift @$part ) => $script_padded_size => "\x00" );
+        $out_env_start = length $out;
+        $env_files     = $part;
+        $out .=
+          pad( cat(@$part), ( $part_size - $script_padded_size ) => "\x00" );
+        $out_env_end = length $out;
+
+    }
+    else {
+
+        $out .= pad cat(@$part) => $part_size => "\xFF";
+
+        if ($env_spi_generate) {
+
+#~
+#~ # 512+128+3072+4224 = 7936
+#~ mtd=mtdparts=W25q128-flash.0:512k(uboot),64k(script),64k(dtb),3072k(kernel),4224k(initrd),64k(user),8192k@0(8M),-@0(full)
+#~ kernel_size=     3200000
+#~ ramdisk_size=    2200000
+#~ ramdisk_size=    4000000
+#~ fdt_size=        65536
+#~
+#~ bootfrom=spi
+#~
+#~ #end
+
+            my $s = $mtd_name_uboot_read_size{$part_name};
+
+            if ($s) {
+                $env_spi_content .= sprintf "%s=%d\n",
+                  $s->[0] => $s->[1] ? $used_size : $part_size;
+                $env_spi_content .= sprintf "%s=%x\n",
+                  $mtd_name_uboot_read_offset{$part_name},
+                  $spi;
+            }
+
+            $s = $mmc_name_uboot_read_size{$part_name};
+
+            if ($s) {
+                my $real_size = $s->[1] ? $used_size : $part_size;
+                my $fsize     = $real_size / $MMC_BS;
+                my $isize     = int $fsize;
+                $isize++ unless $fsize == $isize;
+                $env_spi_content .= sprintf "%s=%x\n", $s->[0] => $isize;
+            }
+
+            $s = $mmc_name_uboot_read_offset{$part_name};
+
+            if ($s) {
+                $env_spi_content .= sprintf "%s=%x\n", $s, $mmc / $MMC_BS;
+            }
+
+        }
+    }
+
+    push @env_spi_mtd_parts => sprintf "%sk(%s)" => $part_size/1024, $part_name;
+    $env_spi_mmc_parts .= "$part_name=$part_size;";
+
+    printf STDOUT "[i] %12s 0x%08X(%9s){%8s} $files\n" => $part_name,
+      $part_size, $part_size, $used_size, $files;
+
+    $mmc           += $part_size;
+    $spi           += $part_size;
+    $img_used_size += $part_size;
+
+}
+
+sub kilo {
+    int( $_[0] / 1024 );
+}
+
+sub tobytes {
+    return $1 * 1024 * 1024 if $_[0] =~ /(\d+)M/;
+    return $1 * 1024 if $_[0] =~ /(\d+)K/;
+}
+
+sub mkimage_header {
+
+    # uboot script mkimake header
+    pack "H*" => join /\s+/ => qw/
+      27051956515b32295891963900000fc000000000000000009cfe4d7c0502060000000000
+      0000000000000000000000000000000000000000000000000000000000000fb800000000
+      /;
+}
+
+our $out_size = length $out;
+
+unless ($img_size_bytes) {
+    warn "[i] write $img_size_bytes not padder by flash size\n";
+}
+else {
+    if ( $out_size > $img_size_bytes ) {
+        DIE 5 => "[e] out size $out_size > $img_size ($img_size_bytes)\n";
+    }
+    else {
+        $out = pad( $out => $img_size_bytes );
+    }
+}
+
+if ($env_spi_generate) {
+
+    $env_spi_content .=
+      $env_spi_mtd_parts . join "," => @env_spi_mtd_parts => '-@0(full)';
+    $env_spi_content .= "\n";
+
+    if ($mmc_image) {
+        substr $env_spi_mmc_parts, -1, 1, '';
+        warn "[i] $env_spi_mmc_parts\n";
+        $env_spi_content .= $env_spi_mmc_parts . "\n";
+    }
+
+    #   $env_spi_content .= "bootfrom=spi\n#end\n";
+    #   $env_spi_content .= "bootfrom=MMC\n#end\n";
+    $env_spi_content .= "\n#end\n";
+
+    my $env_sz = $out_env_end - $out_env_start;
+    my $oe     = pop @$env_files;                 #
+
+    substr $out, $out_env_start, $env_sz,
+      pad( cat(@$env_files) . $env_spi_content, $env_sz => "\x00" );
+
+    warn "[i] override env ($oe) =>\n$env_spi_content";
+
+}
+
+if ($spi_image) {
+    our $img_spi_name = sprintf $img_name, $img_size;
+    savefile( $out => $img_spi_name )
+      or DIE 6 => "[e] write error $img_spi_name\n";
+}
+
+if ($mmc_image) {
+
+    ## 512 * 2048 = 1048576
+    ## 512 * 2048 * 8 = 8388608
+    ## 2048 * 8  = 16384
+    ## NOW add partitions
+#dd if=/dev/zero bs=1M count=1 >> orange_pi_zero_hyphop_mizy_spi_flash_demo-8M+8192-mmc.bin
+
+    #   our $img_mmc_name = sprintf $img_name, "$img_size+$MMC_OFFSET", "-mmc";
+    our $img_mmc_name = sprintf $img_name, "$img_size.$MMC_OFFSET", "-mmc";
+
+    #   our $mmc_boot="\x00" x $MMC_OFFSET;
+
+    my $img_mmc_name_file = $img_mmc_name =~ m{.+/} ? $' : $img_mmc_name;
+
+    our @MMC_IMAGE_INFO = (
+        length $out, $img_mmc_name_file,
+        "miZy_spi_image_builder $NOW ## sachin ##"
+    );
+
+    my @mmc_image_info;
+    push @mmc_image_info => substr $_, 0, 63 for @MMC_IMAGE_INFO[ 0 .. 2 ];
+
+    warn join "\n" => "" => MMC_INFO_HEADER => @mmc_image_info,
+      BLOCKS => ( ( length $out ) / 512 ),
+      "\n";
+
+    #64 * 3 = 192
+    our $mmc_boot = sprintf "%-63s\n" x3 => @mmc_image_info;
+    $mmc_boot .= "\x00" x ( 512 - length $mmc_boot );
+    $mmc_boot = ${mmc_boot} x ( $MMC_OFFSET / 512 );
+
+    #    $mmc_boot .= "\x00" x (  $MMC_OFFSET - length $mmc_boot );
+
+    DIE 7 => "length mmc_boot != $MMC_OFFSET\n"
+      if length $mmc_boot != $MMC_OFFSET;
+
+    #440 +
+    our $out_mmc = $mmc_boot . $out;
+    savefile( $out_mmc => $img_mmc_name )
+      or DIE 6 => "[e] write error $img_mmc_name\n";
+}
+
+__END__
+

@@ -1,0 +1,22 @@
+#!/bin/sh
+
+## hyphop ##
+
+# overlay-whiteout fix
+
+ov=/overlay
+wo="(overlay-whiteout)"
+
+find $ov  -type l | while read i ; do
+
+	r=${i#$ov}
+	l=`readlink "$r"`
+
+	[ "$wo" = "$l" ] && {
+		echo "[OVL] clean $r -> $l"
+		rm $r
+	}
+	
+done
+
+

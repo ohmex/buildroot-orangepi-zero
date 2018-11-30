@@ -1,0 +1,368 @@
+#!/bin/sh
+
+## hyphop ##
+
+NAME=overlay.MMC
+DEVNAME=user
+DEVMNT=/tmp/$DEVNAME.MMC
+OVLMNT=/tmp/$DEVNAME
+MODES="mount | umount | remount | clear | info"
+OPTS="-o noatime"
+PARTS="uboot script dtb kernel initrd user"
+MOD=block2mtd
+
+usage() { echo "\
+$NAME - user data MMC overlay utils 
+
+USAGE
+
+    $NAME [ $MODES ] [ mount args ]
+
+ABOUT
+
+    user_data overlay raw MMC ( jffs2 $MOD part )
+
+EXAMPLES
+
+    $NAME.mount
+    $NAME.umount
+
+    $NAME.mount ro
+    $NAME remount rw
+
+    verbose=1 $NAME remount ro
+
+    $NAME clear
+    $NAME --help
+    
+PATHS & NAMES
+
+    dev_part_name $DEVNAME
+    mount_dir     $DEVMNT => $OVLMNT
+";
+}
+
+[ "$DEV" = "" ] && DEV=/dev/mmcblk0
+BS=8192
+ERASESIZE=64
+losetup="/usr/sbin/losetup"
+#insmod="/usr/sbin/insmod"
+insmod="/usr/sbin/modprobe"
+
+ECHO(){
+    [ "$verbose" ] && \
+    echo "$@"
+}
+
+FNAME=`basename $0`
+
+for m in $MODES; do
+    [ "$NAME.$m" = "$FNAME" ] && {
+	mode=$m
+	break
+    }
+done
+
+
+[ "$mode" = "" ] && { mode=$1 ; [ "$1" ] && shift ; } 
+[ "$mode" = "" ] &&  mode=info
+
+[ "$1" = "--help" ] && { usage; exit 0; } 
+
+ECHO "[i] mode $mode args: $@"
+
+chk_yes(){
+	[ "$MOUNTED" ] && {
+	    echo "[e] mounted already : $MOUNTED"
+	    exit $1
+	}
+}
+chk_no(){
+	[ "$MOUNTED" ] || {
+	    echo "[w] $MOD($MTDBLK) not mounted"
+	    exit $1
+	}
+}
+
+[ -b $DEV ] || {
+    echo "[i] not found dev $DEV"
+    exit 1
+}
+
+mizy_info=`dd bs=256 count=1 skip=2 if=$DEV 2>/dev/null | head -n3`
+
+echo "$mizy_info" | grep -q miZy  || {
+    echo "[i] not found miZy hybrid mmc image"
+    exit 1
+}
+
+for v in `cat /proc/cmdline`; do
+    case $v in
+    mmcparts*)
+    parts=${v#mmcparts=}
+    eval $parts
+    user_offset=0
+    used=0
+    for p in $PARTS; do
+	eval "v=\$$p"
+	#echo "[i] $p $v"
+	used=$((used+v))
+	[ "$p" = "user" ] || {
+	user_offset=$((user_offset+v))
+	}
+    done
+    ;;
+    esac
+done
+
+failed(){
+    echo "[e] undef $@"
+    exit 1
+}
+
+[ "$parts" = "" ] && failed mmcparts
+[ "$used" = "" ]  && failed usedsize
+[ "$user_offset" = "" ] && failed user offset data
+
+
+#mtd7: 00160000 00010000 "$MOD: /dev/loop0"
+
+MTD=
+MTDBLK=
+LOOP=
+
+mtd_part() {
+    mtd_part=`grep $1 /proc/mtd 2>/dev/null`
+    i=0
+    for s in $mtd_part; do
+	case $s in
+	    mtd*)
+	    part_num=${s:3:1} # ok only one char 
+	    MTD="/dev/mtd$part_num"
+	    MTDBLK="/dev/mtdblock$part_num"
+	    ;;
+	    /dev/loop*)
+	    LOOP=${s:0:10}
+	    ;;
+	esac
+    done
+}
+
+mtd_part $MOD
+
+mounted(){
+MOUNTED=`grep "$MTDBLK " /proc/mounts 2>/dev/null`
+}
+
+[ "$MTDBLK" = "" ] || mounted
+
+MOUNTED_DEV=`grep "$DEV " /proc/mounts 2>/dev/null`
+
+case $mode in 
+    *h*)
+	usage
+	exit 0;
+    ;;
+
+    remount)
+
+	chk_no 1
+
+	args=""
+	for a in $@ ; do
+	    args="-o $a"
+	done
+
+	cmd="mount -o remount $args $MTDBLK"
+	ECHO $cmd
+
+	$cmd || {
+	    echo "[e] $mode ($@) fail"
+	    dmesg | tail -n3
+	    exit 1
+	}
+
+	mounted
+
+	ECHO $MOUNTED
+	
+	exit 0
+
+    ;;
+
+    mount)
+
+	chk_yes 1
+	
+	[ "$LOOP" ] && {
+	    echo "[w] $DEV used already as $LOOP"
+	    exit 0
+	}
+
+	ECHO $LOOP
+
+	LOOP=`losetup -f`
+    
+	[ "$LOOP" ] || {
+	    echo "[e] not found free loopdevs"
+	    exit 1
+	}
+
+	args=""
+	for a in $@ ; do
+	    args="-o $a "
+	done
+
+	user_offset_real=$(($user_offset+$BS))
+
+	cmd="$losetup -o $user_offset_real --sizelimit $user $LOOP $DEV"
+	ECHO $cmd
+	$cmd || {
+	    echo "[e] $cmd"
+	    exit 1
+	}
+	
+	cmd="$insmod $MOD $MOD=$LOOP,${ERASESIZE}ki"
+	$cmd || {
+	    echo "[e] $cmd"
+	    exit 1
+	}
+	
+	[ -d /sys/module/$MOD ] || {
+	    echo "[e] $MOD not loaded"
+	    exit 1
+	}
+
+	mtd_part $MOD
+	
+	[ -e $MTDBLK ] || { 
+	    cmd="mknod $MTDBLK b 31 $part_num"
+	    ECHO "[w] $cmd"
+	    $cmd
+	}
+	
+	[ -e $MTDBLK ] || { 
+	    echo "[e] not have dev $MTDBLK"
+	    exit 1
+	}
+	
+	[ -d $DEVMNT ] || mkdir $DEVMNT || {
+	    echo "[e] $DEVMNT mount point fail"
+	    exit 1
+	}
+	
+	cmd="mount -t jffs2 $OPTS $args $MTDBLK $DEVMNT"
+
+ 	$cmd || {
+	    echo "[e] $cmd fail"
+ 	    dmesg | tail -n3
+ 	    echo "[i] try $0 init"
+ 	    echo "[i] try $0 clear"
+ 	    exit 1
+ 	}
+
+	cmd="ln -sf $DEVMNT $OVLMNT"
+#	echo $cmd
+
+	[ -L $OVLMNT ] && rm $OVLMNT
+
+	$cmd
+
+	mounted
+
+	ECHO $MOUNTED
+	
+	exit 0
+    ;;
+
+    umount)
+
+	[ "$LOOP" ] || {
+	    echo "[w] $NAME not mounted"
+	    exit 0
+	}
+
+	#chk_no 0
+
+	[ "$MOUNTED" ] && { 
+	    cmd="umount $MTDBLK"
+	    ECHO $cmd
+	    $cmd || {
+		echo "[e] $cmd fail"
+	        exit 1
+	    }
+	}
+
+	[ -d /sys/module/$MOD ] && rmmod $MOD
+
+	[ -d /sys/module/$MOD ] && {
+	    echo "[w] $MOD still used"
+	    exit 1
+	}
+
+	$losetup -d $LOOP || {
+	    echo "[e] $LOOP used"
+	    exit 1
+	}
+
+	mounted
+
+	[ "$MOUNTED" ] && {
+	    echo "[e] still $MOUNTED"
+	    exit 1
+	}
+
+	rmdir $DEVMNT
+	rm $OVLMNT
+
+	exit 0
+    ;;
+
+    clear)
+
+	chk_yes 1
+
+	off=$(($user_offset + $BS))
+	offb=$(($off / $BS))
+	count=$((user / $BS))
+
+#	cmd1="dd if=/dev/zero count=$count bs=$BS"
+#	cmd1="dd if=/dev/zero"
+	cmd2="dd of=$DEV count=$count bs=$BS seek=$offb"
+#	echo "$cmd1 | $cmd2"
+	echo "ff* => $cmd2"
+#	$cmd1 2>/dev/null | tr '\0' '\xff' | $cmd2 
+	tr '\0' '\xff' < /dev/zero | $cmd2 
+
+	exit 0
+    ;;
+
+    info)
+	#ECHO $mode
+#	echo $mtd_part
+
+        echo "[i] dev $DEV"
+        echo "==miZy mmc header"
+        echo "$mizy_info"
+        echo "=="
+        echo "[i] parts: $parts"
+        echo "[i] total size: $used"
+        echo "[i] user data offset: $user_offset"
+        echo "[i] user data size: $user"
+        echo "[i] LOOP: $LOOP"
+        echo "[i] MTD: $MTD"
+        echo "[i] MTDBLK: $MTDBLK"
+
+	[ "$MOUNTED" ] && {
+	    echo $MOUNTED
+		df | grep /tmp/user
+	}
+    ;;
+
+    *)
+    echo "[e] undef mode $mode"
+    exit 1
+    ;;
+
+esac
+

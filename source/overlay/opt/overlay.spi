@@ -1,0 +1,227 @@
+#!/bin/sh
+
+## hyphop ##
+
+NAME=overlay.spi
+DEVNAME=user
+DEVMNT=/tmp/$DEVNAME.spi
+OVLMNT=/tmp/$DEVNAME
+MODES="mount | umount | remount | clear | info"
+OPTS="-o noatime"
+
+usage() { echo "\
+$NAME - user data SPI overlay utils
+
+USAGE
+
+    $NAME [ $MODES ] [ mount args ]
+
+ABOUT
+
+    user_data overlay spi ( jffs2 mtd part )
+
+EXAMPLES
+
+    $NAME.mount
+    $NAME.umount
+
+    $NAME.mount ro
+    $NAME remount rw
+
+    verbose=1 $NAME remount ro
+
+    $NAME clear
+    $NAME --help
+    
+PATHS & NAMES
+
+    mtd_part_name  $DEVNAME
+    mount_dir      $DEVMNT => $OVLMNT
+";
+}
+
+
+ECHO(){
+    [ "$verbose" ] && \
+    echo "$@"
+}
+
+[ -f /proc/mtd ] || {
+    echo "[e] not have mtd parts"
+    exit 1
+}
+
+mtd_part=`grep $DEVNAME /proc/mtd 2>/dev/null`
+
+[ "$mtd_part" = "" ] && {
+    cat /proc/mtd 
+    echo "[e] notfound mtd part: $DEVNAME"
+    exit 1
+}
+
+part_num=""
+
+for s in $mtd_part; do
+    part_num=${s:3:1} # ok only one char 
+    break
+done
+
+DEV="/dev/mtdblock$part_num"
+
+MOUNTED=`grep $DEV /proc/mounts 2>/dev/null`
+
+ECHO "[i] $DEV ($DEVNAME)";
+
+[ -d $DEVMNT ] || mkdir $DEVMNT
+[ -d $DEVMNT ] || exit 1
+
+FNAME=`basename $0`
+
+for m in $MODES; do
+    [ "$NAME.$m" = "$FNAME" ] && {
+	mode=$m
+	break
+    }
+done
+
+[ "$mode" = "" ] && { mode=$1 ; [ "$1" ] && shift; } 
+[ "$mode" = "" ] &&  mode=info
+
+[ "$1" = "--help" ] && { usage; exit 0; } 
+
+ECHO "[i] mode $mode args: $@"
+
+chk_yes(){
+	[ "$MOUNTED" ] && {
+	    echo "[e] mounted already : $MOUNTED"
+	    exit $1
+	}
+}
+chk_no(){
+	[ "$MOUNTED" ] || {
+	    echo "[w] $DEV not mounted"
+	    exit $1
+	}
+}
+
+
+case $mode in 
+    *h*)
+	usage
+	exit 0;
+    ;;
+
+    remount)
+
+	chk_no 1
+
+	args=""
+	for a in $@ ; do
+	    args="-o $a"
+	done
+
+	cmd="mount -o remount $args $DEV"
+	ECHO $cmd
+
+	$cmd || {
+	    echo "[e] $mode ($@) fail"
+	    dmesg | tail -n3
+	    exit 1
+	}
+
+	status=`grep $DEV /proc/mounts`
+
+	ECHO $status
+
+	exit 0
+    ;;
+
+    mount)
+
+	chk_yes 1
+
+	args=""
+	for a in $@ ; do
+	    args="-o $a "
+	done
+
+	cmd="mount -t jffs2 $OPTS $args $DEV $DEVMNT"
+	ECHO $cmd
+
+	$cmd || {
+	    echo "[e] $mode ($@) fail"
+	    dmesg | tail -n3
+	    echo "[i] try $0 init"
+	    exit 1
+	}
+
+	[ -L $OVLMNT ] && rm $OVLMNT
+
+	cmd="ln -sf $DEVMNT $OVLMNT"
+	ECHO $cmd
+	$cmd
+
+	status=`grep $DEV /proc/mounts`
+
+	ECHO $status
+
+	exit 0
+    ;;
+
+    umount)
+
+	chk_no 0
+
+	cmd="umount $DEV"
+	ECHO $cmd
+	$cmd || {
+	    echo "[e] $mode fail"
+	    exit 1
+	}
+
+	status=`grep $DEV /proc/mounts 2>/dev/null`
+
+	[ "$status" ] && {
+	    echo "[e] $status"
+	    exit 1
+	}
+
+	rmdir $DEVMNT
+	rm $OVLMNT
+	exit 0 
+    ;;
+
+    clear)
+
+	chk_yes 1
+
+	cmd="mtd erase $DEVNAME"
+	ECHO $cmd
+	$cmd || {
+	    echo "[e] $mode fail"
+	    exit 1
+	}
+    
+	exit 0
+
+    ;;
+
+    info)
+	#ECHO $mode
+	part_size=`cat /sys/class/mtd/mtd5/size`
+	echo "$mtd_part $part_size bytes"
+	echo "=="
+	[ "$MOUNTED" ] && {
+	    echo $MOUNTED
+	    echo "=="
+	}
+	df -h $DEVMNT
+    ;;
+
+    *)
+    echo "[e] undef mode $mode"
+    exit 1
+    ;;
+
+esac
+

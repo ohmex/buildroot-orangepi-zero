@@ -1,0 +1,13 @@
+#!/bin/sh
+
+## hyphop ##
+
+case $@ in
+    *help*)
+    about && exit
+    ;;
+    *-h*)
+    about && exit
+    ;;
+esac;
+

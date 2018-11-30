@@ -1,0 +1,35 @@
+#!/bin/sh
+
+## hyphop ##
+
+M=/sys/class/mmc_host/mmc
+
+#[ -d ${M}0 ] || {
+#    echo "[w] not found any $D"
+#    exit 1
+#}
+
+for m in $M? ; do
+    i=${m#$M}
+    type=`cat $m/mmc*/type 2>/dev/null`
+    [ "$type" ] || type="-"
+
+    name=`cat $m/mmc*/name 2>/dev/null`
+    [ "$name" ] || name="-"
+
+	mod=`cat $m/device/modalias 2>/dev/null`
+
+    [ "$type" = "SDIO" ] && {
+	for f in /sys/class/mmc_host/mmc1/mmc*/mmc*/uevent;do 
+	name=`egrep -o DRIVER=\\\w+ $f`
+	break
+	done
+	name=${name#DRIVER=}
+    }
+
+    block=`ls $m/mmc*/block/ 2>/dev/null`
+    [ "$block" ] && block="/dev/$block"
+    [ "$block" ] || block="-"
+    printf "%-12s %s %-4s %-16s %s\n" $block $i $type $name $mod
+done
+

@@ -1,0 +1,52 @@
+To start Ethernet, you should make (on the Orange Pi Zero): 
+
+# modprobe sun8i-emac 
+
+Then to configure IP address, you should either start dhcp: 
+
+# udhcpc -i eth0 
+
+Or set the IP manually (the IP address should be probably modified to match your 
+network configuration) 
+
+# ifconfig eth0 172.19.1.2 up 
+
+You can also start WiFi and view the list of available networks: 
+
+# modprobe xradio_wlan 
+# ifconfig wlan0 up 
+# iwlist wlan0 scanning 
+
+modprobe sun8i-emac && udhcpc -i eth0 && modprobe xradio_wlan && ifconfig wlan0 up && iwlist wlan0 scanning | grep SSID && ifconfig
+
+-----------------
+ctrl_interface=/run/wpa_supplicant
+update_config=1
+
+network={
+	ssid="kainos"
+	psk="0123456789abcd"
+}
+----------------
+
+wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf
+
+
+set_network 0 ssid "kainos"
+set_network 0 psk "0123456789abcd"
+enable_network 0
+
+
+wireless-essid kainos
+pre-up wpa_supplicant -B w -D wext -i wlan0 -c /etc/wpa_supplicant.conf -dd
+post-down killall -q wpa_supplicant
+
+ctrl_interface=/var/run/wpa_supplicant
+ctrl_interface_group=0 
+ap_scan=1 
+network={
+    ssid="kainos"
+    psk="0123456789abcd"
+}
+===================
+ifconfig wlan0 up && wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf && udhcpc -i wlan0

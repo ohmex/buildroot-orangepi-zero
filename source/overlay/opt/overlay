@@ -1,0 +1,310 @@
+#!/bin/sh
+
+## hyphop ##
+
+NAME=overlay
+DEVNAME=user
+#SPIMNT=/tmp/$DEVNAME.spi
+OVLMNT=/tmp/$DEVNAME
+OVERLAY=/overlay
+MODES="load | save | add | checkin | checkout | refresh | remout | umount | info"
+
+about() { echo "\
+$NAME - user data overlay utils
+
+USAGE
+
+    $NAME [ $MODES ] [ args ]
+
+EXAMPLES
+
+    $NAME load
+    $NAME save
+    $NAME save force
+    $NAME save -n -v
+    $NAME store			# store backup
+    $NAME restore		# restore backup 
+    $NAME checkin
+    $NAME checkout
+    $NAME refresh
+    $NAME umount
+    $NAME remount ro
+    $NAME remount rw
+    $NAME info
+    
+PATHS & NAMES
+
+    $OVLMNT  - mount dir stored overlay files
+    $OVERLAY - overlay in ram
+";
+}
+
+. /opt/help_inc
+
+ECHO(){
+    [ "$verbose" ] && \
+    echo "$@"
+}
+
+
+[ -L $OVLMNT ] && OVL=`readlink $OVLMNT`
+
+ECHO "[i] $OVLMNT => $OVL ($DEVNAME)";
+
+FNAME=`basename $0`
+
+for m in $MODES; do
+    [ "$NAME.$m" = "$FNAME" ] && {
+	mode=$m
+	break
+    }
+done
+
+for v in `cat /proc/cmdline`; do
+    case $v in
+	loadfrom*)
+        loadfrom=${v#loadfrom=}
+	break
+    ;;
+    esac
+done
+
+ECHO "[i] mode: $mode loadfrom: $loadfrom"
+
+DEVTYPE=
+
+    case $loadfrom in
+	spi*)
+	DEVTYPE=spi
+	;;
+	MMC*)
+	DEVTYPE=MMC
+	;;
+	fel*)
+	DEVTYPE=fel
+	;;
+	sd*)
+	DEVTYPE=sd
+	;;
+    esac 
+
+CMD="overlay.$DEVTYPE"
+
+ARGS="$@"
+
+case "$0 $@" in 
+    *ram*)
+	find $OVERLAY
+	exit 0
+    ;;
+    *info*)
+    exec $CMD info
+    ;;
+esac
+
+[ "$mode" = "" ] && { mode=$1 ; [ "$1" ] && shift; } 
+[ "$mode" = "" ] &&  mode=info
+
+MOUNTED=
+
+mounted(){
+MOUNTED=`grep $OVLMNT /proc/mounts 2>/dev/null`
+[ -L $OVLMNT ] && OVL=`readlink $OVLMNT`
+}
+
+mounted
+
+#shift
+
+args=$@
+
+force=
+
+    case $args in
+	*-f*)
+	args=${args/--force/}
+	args=${args/-force/}
+	args=${args/-f/}
+	force=1
+	;;
+	*force*)
+	args=${args/force/}
+	force=1
+	;;
+    esac
+
+[ "$MOUNTED" ] || {
+    [ "$force" = "1" ] || {
+    echo "[w] $OVLMNT not mounted ($loadfrom)"
+    echo "[i] try:
+    # mount overlay before usage
+    $CMD mount
+    # or use force mode
+    $NAME $ARGS -f
+"
+    exit 0
+    }
+}
+
+CMDIF(){
+    ECHO $@
+    $@ || {
+	echo "[e] $@"
+	return 1
+    }
+}
+
+refresh() {
+    cmd="mount -o remount /"
+    echo $cmd
+    $cmd
+}
+
+remount() {
+    args=""
+    for a in $@ ; do
+        args="-o $a "
+    done
+    cmd="mount -o remount $args $OVL"
+    echo $cmd
+    $cmd
+}
+
+case $mode in 
+    files)
+	find $OVLMNT$OVERLAY
+	exit 0
+    ;;
+    checkin)
+    args="-n -v $@"
+    mode=load
+    ;;
+    checkout)
+    args="-n $@"
+    mode=save
+    ;;
+    check)
+    args=-n
+    mode=save
+    ;;
+    refresh)
+    refresh
+    exit 0
+    ;;
+    remount)
+    remount $@
+    exit 0
+    ;;
+    *info*)
+    exec $CMD info
+    ;;
+    umount)
+    exec $CMD umount
+    ;;
+    mount)
+    exec $CMD mount ro
+    ;;
+esac
+
+[ "$force" = "1" ] && {
+    [ "$MOUNTED" ] || {
+	
+	$CMD mount ro || {
+	    echo "[e] overlay not mounted"
+	    exit 1
+	}
+	mounted
+	echo "[i] force mode"
+
+        [ "$MOUNTED" ] || {
+	    echo "[i] overlay not mounted"
+	    exit 1
+	}
+    }
+}
+
+case $mode in 
+
+    load)
+
+    [ -d $OVLMNT$OVERLAY ] || {
+	echo "[i] $OVLMNT$OVERLAY is empty"
+	exit 0
+    }
+    cmd="rsync -a $args --delete --inplace $OVLMNT$OVERLAY /"
+    echo $cmd
+    $cmd
+
+    case $args in
+	*-n*)
+	    exit 0
+	;;
+    esac
+
+    refresh
+	# fix 
+    /opt/overlay.whiteout
+
+    exit 0
+    ;;
+
+    save)
+
+
+    cmd="rsync -av $args --delete --inplace $OVERLAY $OVLMNT"
+    echo $cmd
+
+    case $args in
+	*-n*)
+	$cmd
+	exit 0
+	;;
+    esac
+
+    case $MOUNTED in
+	*ro,*)
+	$args
+	echo "[i] $MOUNTED"
+	echo "[w] $OVLMNT mounted as read only"
+	[ $force ] && {
+	    echo "[i] force mode / remount ro to rw $OVL"
+	    mount -o remount -o rw $OVL || {
+		echo "[e] failed" 1>&2
+		exit 0
+	    }
+	    $cmd
+	    sync
+#	    sleep 1
+	    mount -o remount -o ro $OVL 
+	    echo "[i] force mode / remount rw to ro $OVL"
+	    exit 0
+	}
+    echo "[i] try
+    $NAME save force
+or
+    $NAME remount rw
+    $NAME save
+"
+	
+	exit 1
+	;;
+    esac
+    
+    $cmd
+    sync
+    
+    exit 0
+
+    ;;
+
+    *info*)
+    exec $CMD info
+    ;;
+
+    *)
+    echo "[e] undef mode $mode"
+    exit 1
+    ;;
+
+esac
+

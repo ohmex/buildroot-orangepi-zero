@@ -1,0 +1,1 @@
+SQUASHFS USERS: After firstboot, / (root) will be jffs2 and /rom (/rom directory) will be squashfs (* except when in failsafe)

@@ -1,0 +1,8 @@
+#!/bin/sh
+echo
+test -z "$1" || cd "$1"
+pwd
+ls -R | grep "^[.]/" | sed -e "s/:$//" -e "s/[^/]*[/]/--/g" -e "s/^/   |/"
+topFolders=$(ls -F -1 | grep "/" | wc -l)
+test $topFolders -ne 0 || echo "   --> no subfolders"
+echo

@@ -1,0 +1,59 @@
+#!/bin/sh
+
+## hyphop ##
+
+    #bootfrom=fel
+
+    echo preinit | cat /proc/uptime -  >> /tmp/.preinit.time
+
+    mv /.init.* /tmp
+
+    config_boot=/boot/config.boot
+
+    msg="[PREINIT] boot_from $bootfrom / load_from $loadfrom"
+    echo $msg
+
+    /opt/mmc_info
+
+    #preinit_net_echo "$msg\n"
+
+    #[ "$loadfrom" = "mmc" ] && {
+
+    case $loadfrom in
+
+	spi*)
+	    echo "spi"
+	    /opt/overlay.spi mount ro && {
+		/opt/overlay load 
+		/opt/overlay.spi umount
+	    }
+	;;
+	MMC*)
+	    DEV=/dev/mmcblk0
+	    [ "$loadfrom" = "MMC1" ] && DEV=/dev/mmcblk1
+	    echo "MMC $DEV"
+	    DEV=$DEV /opt/overlay.MMC mount ro && {
+		/opt/overlay load 
+		/opt/overlay.MMC umount
+	    }
+	;;
+	mmc*)
+
+#        bootp=mmcblk0p1
+#
+#	[ -b /dev/$bootp ] || return 
+#        msg="config_boot: $bootp $config_boot"
+#	echo $msg
+#	mkdir -p /tmp/$bootp
+#	mount -o ro /dev/$bootp /tmp/$bootp
+#	sh /tmp/$bootp/$config_boot
+#        umount /tmp/$bootp
+	;;
+	*)
+	;;
+    
+    esac
+
+    
+    #( /opt/second.start 1>/dev/null 2>/dev/null )&
+

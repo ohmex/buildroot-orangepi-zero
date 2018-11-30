@@ -1,0 +1,71 @@
+#!/bin/sh
+
+[ "$itype" = "busybox" ] && INIT="/sbin/init.busybox"
+[ -x "$INIT" ] || INIT=/sbin/init.openwrt
+
+mount -t proc none /proc 
+UPTIME=`cat /proc/uptime`
+
+ECHO(){
+    echo "$1"
+}
+
+overlay=0
+MNT=/mnt
+rw=$MNT/rw
+ro=$MNT/ro
+RW=$MNT/ovl
+rw2=$MNT/ovl/overlay
+ro2=$MNT/ovl/rom
+
+mount -t tmpfs tmp $MNT
+
+for d in $rw $ro $rw2 $ro2 $RW; do
+    [ -d $d ] || mkdir -p $d
+done
+
+ECHO "INITRD START type: $itype => $INIT / [$0] ($INITRAMFS)"
+
+export MIZY=1
+export INITRAMFS=1
+
+mount -o ro /dev/ram0 $ro && {
+    ECHO "RO: SQUASHFS + RW: overlayfs"
+    mount -t tmpfs tmp-overlay $rw
+
+    echo $UPTIME > $rw/.init.time
+
+    mount -t overlayfs -o noatime,rw,sync,lowerdir=$ro,upperdir=$rw overlayfs $RW
+    mount -o move $rw $rw2
+    mount -o move $ro $ro2
+
+    rm -rf $rw
+    rm -rf $ro
+
+    mount -o move /proc /mnt/ovl/proc
+    mount -o move /dev /mnt/ovl/dev
+
+    overlay=1
+}
+
+if [ "$overlay" = "0" ]
+then 
+    ECHO "RW: INITRAMFS"
+    mount -t tmpfs fake-overlay /overlay
+    cat /proc/uptime > /overlay/.init.time
+    exec $INIT
+else
+    exec chroot /mnt/ovl $INIT
+    # export loadfrom=MMC0
+    # export bootfrom=sd
+    # /opt/preinit
+    # export loadfrom=MMC0 && export bootfrom=sd && /opt/preinit
+fi
+
+
+while [ "1" ]; do
+    ECHO "ooops RETURN to init run sh again"
+    exec sh
+    sleep 1
+done
+

@@ -1,0 +1,9 @@
+menu "Source packages"
+menu "OrangePi tools"
+	source "source/package/wiringop/Config.in"
+endmenu
+menu "Applications"
+	source "source/package/sdlsuite/Config.in"
+endmenu
+endmenu
+
