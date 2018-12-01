@@ -364,19 +364,15 @@ for my $part (@IMG) {
 
     my $t;
     if ( $t = $ENV{"IMG_$part_name"} ) {
-
-        #warn "[i] SACHIN add $t => $part_name";
         push @$part, $t;
     }
 
-    warn "[i] SACHIN FILES @$part";
     my $files = join " " => @$part;
     my $used_size = 0;
 
     for my $file (@$part) {
 
         my $filepath = scan_file($file);
-        warn "[i] SACHIN filepath @$filepath";
         unless ( -f $filepath ) {
             DIE 2 => "[e] file \"$file\" not found\n";
         }
