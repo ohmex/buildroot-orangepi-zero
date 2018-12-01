@@ -4,7 +4,6 @@
 #$(pwd)/support/scripts/genimage.sh "$@"
 
 export current=$PWD
-echo "Current build directory = $current"
 
 builder_path=$current/source/builder
 image_path=$current/output/images
@@ -12,10 +11,7 @@ fex_path=$current/source/fex
 fex_file=ZeroPi.fex
 dtb_file=script.bin
 
-kernel_version=master
-kernel_build_dir=$current/output/build/linux-$kernel_version
-kernel_image_path=$kernel_build_dir/arch/arm/boot
-kernel_image=$kernel_image_path/Image
+kernel_image_path=$image_path
 
 addr=0x40008000
 mkimage=mkimage
