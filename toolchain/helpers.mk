@@ -10,21 +10,27 @@
 #
 copy_toolchain_lib_root = \
 	LIBPATTERN="$(strip $1)"; \
-	LIBPATHS=`find $(STAGING_DIR)/ -name "$${LIBPATTERN}" 2>/dev/null` ; \
+    LIBPATHS=`find $(STAGING_DIR)/ -name "$${LIBPATTERN}" 2>/dev/null` ; \
 	for LIBPATH in $${LIBPATHS} ; do \
 		while true ; do \
 			LIBNAME=`basename $${LIBPATH}`; \
 			DESTDIR=`echo $${LIBPATH} | sed "s,^$(STAGING_DIR)/,," | xargs dirname` ; \
-			mkdir -p $(TARGET_DIR)/$${DESTDIR}; \
-			rm -fr $(TARGET_DIR)/$${DESTDIR}/$${LIBNAME}; \
-			if test -h $${LIBPATH} ; then \
-				cp -d $${LIBPATH} $(TARGET_DIR)/$${DESTDIR}/$${LIBNAME}; \
-				LIBPATH="`readlink -f $${LIBPATH}`"; \
-			elif test -f $${LIBPATH}; then \
-				$(INSTALL) -D -m0755 $${LIBPATH} $(TARGET_DIR)/$${DESTDIR}/$${LIBNAME}; \
-				break ; \
+			if ! [[ "$${LIBPATH}" == *"usr/lib/debug"* ]]; then \
+				mkdir -p $(TARGET_DIR)/$${DESTDIR}; \
+				rm -fr $(TARGET_DIR)/$${DESTDIR}/$${LIBNAME}; \
+				echo ">>>>>> INSTALLING $${LIBPATH}"; \
+				if test -h $${LIBPATH} ; then \
+					cp -d $${LIBPATH} $(TARGET_DIR)/$${DESTDIR}/$${LIBNAME}; \
+					LIBPATH="`readlink -f $${LIBPATH}`"; \
+				elif test -f $${LIBPATH}; then \
+					$(INSTALL) -D -m0755 $${LIBPATH} $(TARGET_DIR)/$${DESTDIR}/$${LIBNAME}; \
+					break ; \
+				else \
+					exit -1; \
+				fi; \
 			else \
-				exit -1; \
+				echo ">>>>>> SKIPPING   $${LIBPATH}"; \
+				break ; \
 			fi; \
 		done; \
 	done
