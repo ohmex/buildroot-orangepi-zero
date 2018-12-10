@@ -55,10 +55,15 @@ endif
 
 endif
 
+# There is no "--enable-slirp"
+ifeq ($(BR2_PACKAGE_QEMU_SLIRP),)
+QEMU_OPTS += --disable-slirp
+endif
+
 ifeq ($(BR2_PACKAGE_QEMU_SDL),y)
 QEMU_OPTS += --enable-sdl
-QEMU_DEPENDENCIES += sdl
-QEMU_VARS += SDL_CONFIG=$(BR2_STAGING_DIR)/usr/bin/sdl-config
+QEMU_DEPENDENCIES += sdl2
+QEMU_VARS += SDL2_CONFIG=$(BR2_STAGING_DIR)/usr/bin/sdl2-config
 else
 QEMU_OPTS += --disable-sdl
 endif
@@ -74,6 +79,13 @@ ifeq ($(BR2_PACKAGE_QEMU_TOOLS),y)
 QEMU_OPTS += --enable-tools
 else
 QEMU_OPTS += --disable-tools
+endif
+
+ifeq ($(BR2_PACKAGE_LIBSECCOMP),y)
+QEMU_OPTS += --enable-seccomp
+QEMU_DEPENDENCIES += libseccomp
+else
+QEMU_OPTS += --disable-seccomp
 endif
 
 ifeq ($(BR2_PACKAGE_LIBSSH2),y)
@@ -101,7 +113,6 @@ define QEMU_CONFIGURE_CMDS
 			--enable-vhost-net \
 			--disable-bsd-user \
 			--disable-xen \
-			--disable-slirp \
 			--disable-vnc \
 			--disable-virtfs \
 			--disable-brlapi \
@@ -117,7 +128,6 @@ define QEMU_CONFIGURE_CMDS
 			--disable-libiscsi \
 			--disable-usb-redir \
 			--disable-strip \
-			--disable-seccomp \
 			--disable-sparse \
 			--disable-mpath \
 			--disable-sanitizers \
@@ -129,6 +139,7 @@ define QEMU_CONFIGURE_CMDS
 			--disable-libxml2 \
 			--disable-capstone \
 			--disable-git-update \
+			--disable-opengl \
 			$(QEMU_OPTS) \
 	)
 endef
@@ -247,6 +258,10 @@ endif # BR2_PACKAGE_HOST_QEMU_LINUX_USER_MODE
 ifeq ($(BR2_PACKAGE_HOST_QEMU_VDE2),y)
 HOST_QEMU_OPTS += --enable-vde
 HOST_QEMU_DEPENDENCIES += host-vde2
+endif
+
+ifdef ($(BR2_PACKAGE_HOST_QEMU_VIRTFS),y)
+HOST_QEMU_OPTS += --enable-virtfs
 endif
 
 # Override CPP, as it expects to be able to call it like it'd
