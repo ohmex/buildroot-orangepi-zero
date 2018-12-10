@@ -1,4 +1,4 @@
-# buildroot-orangepi-zero
+# buildroot-orangepi-zero 2018.08.2
 Buildroot for OrangePi Zero
 
 Buildroot is a simple, efficient and easy-to-use tool to generate embedded
