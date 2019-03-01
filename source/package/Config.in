@@ -4,6 +4,7 @@ menu "OrangePi tools"
 endmenu
 menu "Applications"
 	source "source/package/sdlsuite/Config.in"
+    source "source/package/rfidreader/Config.in"
 endmenu
 endmenu
 

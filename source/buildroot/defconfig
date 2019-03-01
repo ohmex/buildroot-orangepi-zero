@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Buildroot 2019.02-git-g1b2fff5 Configuration
+# Buildroot 2019.02-git Configuration
 #
 BR2_HAVE_DOT_CONFIG=y
 BR2_HOST_GCC_AT_LEAST_4_5=y
@@ -1447,7 +1447,13 @@ BR2_PACKAGE_CANFESTIVAL_ARCH_SUPPORTS=y
 # BR2_PACKAGE_LIBCGICC is not set
 # BR2_PACKAGE_LIBCOAP is not set
 # BR2_PACKAGE_LIBCPPRESTSDK is not set
-# BR2_PACKAGE_LIBCURL is not set
+BR2_PACKAGE_LIBCURL=y
+# BR2_PACKAGE_CURL is not set
+# BR2_PACKAGE_LIBCURL_VERBOSE is not set
+
+#
+# A TLS library is needed for SSL/TLS support
+#
 # BR2_PACKAGE_LIBDNET is not set
 # BR2_PACKAGE_LIBEXOSIP2 is not set
 # BR2_PACKAGE_LIBFCGI is not set
@@ -2245,6 +2251,7 @@ BR2_PACKAGE_WIRINGOP=y
 #
 # Applications
 #
+BR2_PACKAGE_RFIDREADER=y
 
 #
 # Filesystem images

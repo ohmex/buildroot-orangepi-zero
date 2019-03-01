@@ -3,3 +3,4 @@ Put in FEL mode
 2. go 0xffff0020 
 3. sudo sunxi-fel spiflash-info ==> Manufacturer: Winbond (EFh), model: 40h, size: 16777216 bytes.
 4. sudo sunxi-fel version ==> AWUSBFEX soc=00001680(H3) 00000001 ver=0001 44 08 scratchpad=00007e00 00000000 00000000
+5. sunxi-fel -p spiflash-write 0 ./output/images/ZeroPi-16M.bin

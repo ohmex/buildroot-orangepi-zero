@@ -3,11 +3,11 @@
 case "$1" in
   start)
         printf "Starting app..."
-	    app
+	    rfidreader
         ;;
   stop)
         printf "Stopping app..."
-        killall app
+        killall rfidreader
         ;;
   restart|reload)
         "$0" stop
