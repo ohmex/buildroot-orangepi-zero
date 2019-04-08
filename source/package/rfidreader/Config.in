@@ -2,6 +2,8 @@ config BR2_PACKAGE_RFIDREADER
 	bool "rfidreader"
     select BR2_PACKAGE_LIBCURL
     select BR2_PACKAGE_JSON_C
+	depends on BR2_PACKAGE_LIBCURL
+	depends on BR2_PACKAGE_JSON_C
 	help
 	  RFID reader application
 
